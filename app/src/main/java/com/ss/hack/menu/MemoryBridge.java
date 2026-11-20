@@ -1,69 +1,144 @@
 package com.ss.hack.menu;
 
+import android.content.Context;
+import android.os.Environment;
+
+import org.json.JSONObject;
+
 import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.FileReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 
 /**
- * Subway Surfers memory bridge (com.kiloo.subwaysurf).
- * Dump: WalletModel, OwnedCharacterState, CurrencyType
- * Fill OFF_* after pointer scan on current build.
+ * No-root first. Patches wallet.json when readable.
+ * Dump: Coins=1 Keys=2 | Currencies@0x58 | SetCurrency RVA 0x3D7F8AC
  */
 public class MemoryBridge {
 
-    public static long OFF_IL2CPP = 0;
-    public static long OFF_WALLET_INSTANCE = 0;
-    public static long OFF_CURRENCIES = 0x58;
-    public static long OFF_COINS_VALUE = 0;
-    public static long OFF_KEYS_VALUE = 0;
-    public static long OFF_OWNED_CHARS = 0;
-    public static long OFF_PLAYER_HP_OR_HIT = 0;
-    public static long OFF_NOCLIP = 0;
-    public static long OFF_SCORE_MUL = 0;
+    public static final int CURRENCY_COINS = 1;
+    public static final int CURRENCY_KEYS = 2;
 
+    private Context ctx;
+    private File walletFile;
+    private boolean fileMode;
+    private boolean memMode;
     private int pid = -1;
-    private long base;
-    private boolean ok;
+
+    public void setContext(Context c) { ctx = c.getApplicationContext(); }
 
     public boolean attach(String pkg) {
-        detach();
-        pid = findPid(pkg);
-        if (pid <= 0) return false;
-        base = findBase(pid, "libil2cpp.so");
-        OFF_IL2CPP = base;
-        ok = base != 0 || canRead(pid);
-        return ok;
+        fileMode = false;
+        memMode = false;
+        walletFile = null;
+
+        String[] candidates = new String[] {
+                "/sdcard/Android/data/" + pkg + "/files/wallet.json",
+                "/sdcard/Android/data/" + pkg + "/files/Profiles/wallet.json",
+                "/storage/emulated/0/Android/data/" + pkg + "/files/wallet.json",
+                "/sdcard/Android/data/" + pkg + "/files/sybo/wallet.json",
+                Environment.getExternalStorageDirectory() + "/Android/data/" + pkg + "/files/wallet.json"
+        };
+        for (String p : candidates) {
+            File f = new File(p);
+            if (f.exists() && f.canRead()) {
+                walletFile = f;
+                fileMode = true;
+                return true;
+            }
+        }
+
+        if (hasSu()) {
+            pid = findPid(pkg);
+            if (pid > 0) { memMode = true; return true; }
+        }
+        return false;
     }
 
     public void detach() {
-        ok = false;
+        fileMode = false;
+        memMode = false;
+        walletFile = null;
         pid = -1;
-        base = 0;
     }
 
-    public boolean isAttached() { return ok && pid > 0; }
+    public boolean isAttached() { return fileMode || memMode; }
+
+    public String modeLabel() {
+        if (fileMode) return "FILE (no root)";
+        if (memMode) return "MEM (root)";
+        return "NONE";
+    }
 
     public void apply(HackConfig c) {
-        if (!isAttached()) return;
-        if (OFF_WALLET_INSTANCE == 0) return;
+        if (fileMode) {
+            if (c.unlimitedCoins) setCoins(c.coinAmount);
+            if (c.unlimitedKeys) setKeys(c.keyAmount);
+        }
+    }
+
+    public boolean setCoins(int v) { return setCurrencyJson(CURRENCY_COINS, v); }
+    public boolean setKeys(int v) { return setCurrencyJson(CURRENCY_KEYS, v); }
+
+    private boolean setCurrencyJson(int type, int value) {
+        if (!fileMode || walletFile == null) return false;
         try {
-            if (c.unlimitedCoins && OFF_COINS_VALUE != 0)
-                writeInt(resolve(OFF_COINS_VALUE), c.coinAmount);
-            if (c.unlimitedKeys && OFF_KEYS_VALUE != 0)
-                writeInt(resolve(OFF_KEYS_VALUE), c.keyAmount);
-        } catch (Throwable ignored) {}
+            String raw = readAll(walletFile);
+            if (raw == null || raw.isEmpty()) return false;
+            JSONObject root = new JSONObject(raw);
+            JSONObject cur = root.optJSONObject("currencies");
+            if (cur == null && root.has("Currencies")) cur = root.getJSONObject("Currencies");
+            if (cur == null) {
+                cur = new JSONObject();
+                root.put("currencies", cur);
+            }
+            String key = String.valueOf(type);
+            Object entry = cur.opt(key);
+            if (entry instanceof JSONObject) {
+                JSONObject e = (JSONObject) entry;
+                if (e.has("value")) e.put("value", value);
+                else if (e.has("Value")) e.put("Value", value);
+                else if (e.has("_value")) e.put("_value", value);
+                else e.put("value", value);
+            } else {
+                JSONObject e = new JSONObject();
+                e.put("value", value);
+                cur.put(key, e);
+            }
+            writeAll(walletFile, root.toString());
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
-    public void setCoins(int v) {
-        if (OFF_COINS_VALUE != 0) writeInt(resolve(OFF_COINS_VALUE), v);
+    private static String readAll(File f) throws Exception {
+        FileInputStream in = new FileInputStream(f);
+        BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = r.readLine()) != null) sb.append(line);
+        r.close();
+        return sb.toString();
     }
 
-    public void setKeys(int v) {
-        if (OFF_KEYS_VALUE != 0) writeInt(resolve(OFF_KEYS_VALUE), v);
+    private static void writeAll(File f, String s) throws Exception {
+        FileOutputStream out = new FileOutputStream(f);
+        out.write(s.getBytes(StandardCharsets.UTF_8));
+        out.close();
     }
 
-    private long resolve(long off) { return base + off; }
+    private boolean hasSu() {
+        try {
+            Process p = Runtime.getRuntime().exec(new String[]{"which", "su"});
+            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String line = r.readLine();
+            p.waitFor();
+            return line != null && line.contains("su");
+        } catch (Exception e) { return false; }
+    }
 
     private int findPid(String pkg) {
         try {
@@ -75,38 +150,5 @@ public class MemoryBridge {
                 return Integer.parseInt(line.trim().split("\\s+")[0]);
         } catch (Exception ignored) {}
         return -1;
-    }
-
-    private long findBase(int pid, String mod) {
-        try {
-            BufferedReader r = new BufferedReader(new FileReader("/proc/" + pid + "/maps"));
-            String line;
-            while ((line = r.readLine()) != null) {
-                if (line.contains(mod) && line.contains("r-xp")) {
-                    r.close();
-                    return Long.parseLong(line.split("-")[0], 16);
-                }
-            }
-            r.close();
-        } catch (Exception ignored) {}
-        return 0;
-    }
-
-    private boolean canRead(int pid) {
-        try {
-            new FileReader("/proc/" + pid + "/maps").close();
-            return true;
-        } catch (Exception e) { return false; }
-    }
-
-    private void writeInt(long addr, int val) {
-        try {
-            Process p = Runtime.getRuntime().exec("su");
-            DataOutputStream os = new DataOutputStream(p.getOutputStream());
-            os.writeBytes("echo ok\n");
-            os.writeBytes("exit\n");
-            os.flush();
-            p.waitFor();
-        } catch (Exception ignored) {}
     }
 }
