@@ -43,11 +43,12 @@ public class MenuService extends Service {
         startFg();
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         bridge = new MemoryBridge();
+        bridge.setContext(this);
         handler = new Handler(Looper.getMainLooper());
         addBubble();
         boolean ok = bridge.attach("com.kiloo.subwaysurf");
         if (!ok) ok = bridge.attach("com.kiloo.subwaysurf.gp");
-        Toast.makeText(this, ok ? "Attached SS" : "Mo game roi bam Attach", Toast.LENGTH_LONG).show();
+        Toast.makeText(this, ok ? ("OK " + bridge.modeLabel()) : "Mo SS roi Re-Attach (khong can root)", Toast.LENGTH_LONG).show();
         tick = new Runnable() {
             @Override public void run() {
                 bridge.apply(cfg);
@@ -67,7 +68,7 @@ public class MenuService extends Service {
         Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, ch) : new Notification.Builder(this);
         startForeground(2, b.setContentTitle("SS Menu Hack")
-                .setContentText("Running")
+                .setContentText("No-root mode")
                 .setSmallIcon(android.R.drawable.ic_menu_manage)
                 .build());
     }
@@ -132,7 +133,7 @@ public class MenuService extends Service {
         scroll.addView(root);
 
         TextView t = new TextView(this);
-        t.setText("SS HACK MENU");
+        t.setText("SS HACK (NO ROOT)");
         t.setTextColor(Color.parseColor("#FFD600"));
         t.setTextSize(16);
         root.addView(t);
@@ -167,9 +168,9 @@ public class MenuService extends Service {
 
         root.addView(cb("Unlock ALL Characters", cfg.unlockAllChars, v -> cfg.unlockAllChars = ((CheckBox) v).isChecked()));
         root.addView(cb("Unlock ALL Boards", cfg.unlockAllBoards, v -> cfg.unlockAllBoards = ((CheckBox) v).isChecked()));
-        root.addView(cb("Unlock ALL Outfits / Skins", cfg.unlockAllOutfits, v -> cfg.unlockAllOutfits = ((CheckBox) v).isChecked()));
-        root.addView(cb("Free Shop (no pay)", cfg.freeShop, v -> cfg.freeShop = ((CheckBox) v).isChecked()));
-        root.addView(cb("God Mode / Bat tu", cfg.godMode, v -> cfg.godMode = ((CheckBox) v).isChecked()));
+        root.addView(cb("Unlock ALL Outfits", cfg.unlockAllOutfits, v -> cfg.unlockAllOutfits = ((CheckBox) v).isChecked()));
+        root.addView(cb("Free Shop", cfg.freeShop, v -> cfg.freeShop = ((CheckBox) v).isChecked()));
+        root.addView(cb("God Mode", cfg.godMode, v -> cfg.godMode = ((CheckBox) v).isChecked()));
         root.addView(cb("No Hit", cfg.noHit, v -> cfg.noHit = ((CheckBox) v).isChecked()));
         root.addView(cb("Noclip", cfg.noclip, v -> cfg.noclip = ((CheckBox) v).isChecked()));
         root.addView(cb("Mega Jump", cfg.megaJump, v -> cfg.megaJump = ((CheckBox) v).isChecked()));
@@ -177,14 +178,13 @@ public class MenuService extends Service {
         root.addView(cb("Coin Magnet", cfg.magnet, v -> cfg.magnet = ((CheckBox) v).isChecked()));
         root.addView(cb("Double Coins", cfg.doubleCoins, v -> cfg.doubleCoins = ((CheckBox) v).isChecked()));
         root.addView(cb("Score x10", cfg.scoreMultiplier, v -> cfg.scoreMultiplier = ((CheckBox) v).isChecked()));
-        root.addView(cb("Mod Skin preview", cfg.modSkin, v -> cfg.modSkin = ((CheckBox) v).isChecked()));
 
         Button attach = new Button(this);
-        attach.setText("Re-Attach process");
+        attach.setText("Re-Attach (no root)");
         attach.setOnClickListener(v -> {
             boolean ok = bridge.attach("com.kiloo.subwaysurf");
             if (!ok) ok = bridge.attach("com.kiloo.subwaysurf.gp");
-            Toast.makeText(this, ok ? "Attached" : "Fail - can root/VM", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, ok ? ("OK " + bridge.modeLabel()) : "Chua thay wallet.json - cap All files access", Toast.LENGTH_LONG).show();
         });
         root.addView(attach);
 
@@ -192,14 +192,14 @@ public class MenuService extends Service {
         apply.setText("Apply Coins/Keys NOW");
         apply.setBackgroundColor(Color.parseColor("#2E7D32"));
         apply.setOnClickListener(v -> {
-            bridge.setCoins(cfg.coinAmount);
-            bridge.setKeys(cfg.keyAmount);
-            Toast.makeText(this, "Applied (can offset)", Toast.LENGTH_SHORT).show();
+            boolean a = bridge.setCoins(cfg.coinAmount);
+            boolean b = bridge.setKeys(cfg.keyAmount);
+            Toast.makeText(this, (a || b) ? ("Saved " + bridge.modeLabel()) : "Khong ghi duoc (All files / data)", Toast.LENGTH_LONG).show();
         });
         root.addView(apply);
 
         Button close = new Button(this);
-        close.setText("Dong menu (icon van con)");
+        close.setText("Dong menu");
         close.setOnClickListener(v -> togglePanel());
         root.addView(close);
 
