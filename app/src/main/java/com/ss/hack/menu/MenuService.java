@@ -31,11 +31,31 @@ public class MenuService extends Service {
     private View bubble;
     private View panel;
     private WindowManager.LayoutParams bubbleLp;
-    private WindowManager.LayoutParams panelLp;
     private Handler handler;
     private Runnable tick;
     private MemoryBridge bridge;
     private boolean panelVisible;
+    private TextView statusTv;
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && intent.hasExtra("target_pkg")) {
+            String pkg = intent.getStringExtra("target_pkg");
+            if (pkg != null && !pkg.isEmpty()) {
+                cfg.targetPackage = pkg;
+                getSharedPreferences("ss", MODE_PRIVATE).edit().putString("pkg", pkg).apply();
+            }
+        } else {
+            String saved = getSharedPreferences("ss", MODE_PRIVATE).getString("pkg", cfg.targetPackage);
+            if (saved != null) cfg.targetPackage = saved;
+        }
+        if (bridge != null) {
+            boolean ok = bridge.attach(cfg.targetPackage);
+            Toast.makeText(this, ok ? bridge.modeLabel() : ("Target " + cfg.targetPackage), Toast.LENGTH_LONG).show();
+            if (statusTv != null) statusTv.setText(bridge.modeLabel());
+        }
+        return START_STICKY;
+    }
 
     @Override
     public void onCreate() {
@@ -44,11 +64,11 @@ public class MenuService extends Service {
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
         bridge = new MemoryBridge();
         bridge.setContext(this);
+        String saved = getSharedPreferences("ss", MODE_PRIVATE).getString("pkg", cfg.targetPackage);
+        if (saved != null) cfg.targetPackage = saved;
         handler = new Handler(Looper.getMainLooper());
         addBubble();
-        boolean ok = bridge.attach("com.kiloo.subwaysurf");
-        if (!ok) ok = bridge.attach("com.kiloo.subwaysurf.gp");
-        Toast.makeText(this, ok ? ("OK " + bridge.modeLabel()) : "Mo SS roi Re-Attach (khong can root)", Toast.LENGTH_LONG).show();
+        bridge.attach(cfg.targetPackage);
         tick = new Runnable() {
             @Override public void run() {
                 bridge.apply(cfg);
@@ -68,7 +88,7 @@ public class MenuService extends Service {
         Notification.Builder b = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
                 ? new Notification.Builder(this, ch) : new Notification.Builder(this);
         startForeground(2, b.setContentTitle("SS Menu Hack")
-                .setContentText("No-root mode")
+                .setContentText(cfg.targetPackage)
                 .setSmallIcon(android.R.drawable.ic_menu_manage)
                 .build());
     }
@@ -133,10 +153,16 @@ public class MenuService extends Service {
         scroll.addView(root);
 
         TextView t = new TextView(this);
-        t.setText("SS HACK (NO ROOT)");
+        t.setText("SS HACK MENU");
         t.setTextColor(Color.parseColor("#FFD600"));
         t.setTextSize(16);
         root.addView(t);
+
+        statusTv = new TextView(this);
+        statusTv.setText(bridge.modeLabel());
+        statusTv.setTextColor(Color.parseColor("#80CBC4"));
+        statusTv.setTextSize(11);
+        root.addView(statusTv);
 
         root.addView(cb("Unlimited Coins", cfg.unlimitedCoins, v -> {
             cfg.unlimitedCoins = ((CheckBox) v).isChecked();
@@ -180,11 +206,11 @@ public class MenuService extends Service {
         root.addView(cb("Score x10", cfg.scoreMultiplier, v -> cfg.scoreMultiplier = ((CheckBox) v).isChecked()));
 
         Button attach = new Button(this);
-        attach.setText("Re-Attach (no root)");
+        attach.setText("Re-Attach app");
         attach.setOnClickListener(v -> {
-            boolean ok = bridge.attach("com.kiloo.subwaysurf");
-            if (!ok) ok = bridge.attach("com.kiloo.subwaysurf.gp");
-            Toast.makeText(this, ok ? ("OK " + bridge.modeLabel()) : "Chua thay wallet.json - cap All files access", Toast.LENGTH_LONG).show();
+            boolean ok = bridge.attach(cfg.targetPackage);
+            statusTv.setText(bridge.modeLabel());
+            Toast.makeText(this, ok ? bridge.modeLabel() : ("Chua thay wallet: " + cfg.targetPackage), Toast.LENGTH_LONG).show();
         });
         root.addView(attach);
 
@@ -194,7 +220,7 @@ public class MenuService extends Service {
         apply.setOnClickListener(v -> {
             boolean a = bridge.setCoins(cfg.coinAmount);
             boolean b = bridge.setKeys(cfg.keyAmount);
-            Toast.makeText(this, (a || b) ? ("Saved " + bridge.modeLabel()) : "Khong ghi duoc (All files / data)", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, (a || b) ? ("Saved " + bridge.modeLabel()) : "Loi ghi file / All files", Toast.LENGTH_LONG).show();
         });
         root.addView(apply);
 
@@ -208,7 +234,7 @@ public class MenuService extends Service {
         kill.setOnClickListener(v -> stopSelf());
         root.addView(kill);
 
-        panelLp = baseLp(false);
+        WindowManager.LayoutParams panelLp = baseLp(false);
         panelLp.width = dp(280);
         panelLp.height = WindowManager.LayoutParams.WRAP_CONTENT;
         panelLp.gravity = Gravity.TOP | Gravity.START;
