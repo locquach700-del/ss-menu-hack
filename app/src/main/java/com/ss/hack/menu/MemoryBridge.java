@@ -12,10 +12,7 @@ import java.io.FileOutputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 
-/**
- * No-root first. Patches wallet.json when readable.
- * Dump: Coins=1 Keys=2 | Currencies@0x58 | SetCurrency RVA 0x3D7F8AC
- */
+/** No-root: wallet.json under Android/data/<pkg>/files/ */
 public class MemoryBridge {
 
     public static final int CURRENCY_COINS = 1;
@@ -24,22 +21,22 @@ public class MemoryBridge {
     private Context ctx;
     private File walletFile;
     private boolean fileMode;
-    private boolean memMode;
-    private int pid = -1;
+    private String attachedPkg = "";
 
     public void setContext(Context c) { ctx = c.getApplicationContext(); }
 
     public boolean attach(String pkg) {
         fileMode = false;
-        memMode = false;
         walletFile = null;
+        attachedPkg = pkg == null ? "" : pkg.trim();
+        if (attachedPkg.isEmpty()) return false;
 
         String[] candidates = new String[] {
-                "/sdcard/Android/data/" + pkg + "/files/wallet.json",
-                "/sdcard/Android/data/" + pkg + "/files/Profiles/wallet.json",
-                "/storage/emulated/0/Android/data/" + pkg + "/files/wallet.json",
-                "/sdcard/Android/data/" + pkg + "/files/sybo/wallet.json",
-                Environment.getExternalStorageDirectory() + "/Android/data/" + pkg + "/files/wallet.json"
+                "/sdcard/Android/data/" + attachedPkg + "/files/wallet.json",
+                "/sdcard/Android/data/" + attachedPkg + "/files/Profiles/wallet.json",
+                "/storage/emulated/0/Android/data/" + attachedPkg + "/files/wallet.json",
+                "/sdcard/Android/data/" + attachedPkg + "/files/sybo/wallet.json",
+                Environment.getExternalStorageDirectory() + "/Android/data/" + attachedPkg + "/files/wallet.json"
         };
         for (String p : candidates) {
             File f = new File(p);
@@ -49,34 +46,28 @@ public class MemoryBridge {
                 return true;
             }
         }
-
-        if (hasSu()) {
-            pid = findPid(pkg);
-            if (pid > 0) { memMode = true; return true; }
-        }
         return false;
     }
 
     public void detach() {
         fileMode = false;
-        memMode = false;
         walletFile = null;
-        pid = -1;
+        attachedPkg = "";
     }
 
-    public boolean isAttached() { return fileMode || memMode; }
+    public boolean isAttached() { return fileMode; }
+    public String getPackage() { return attachedPkg; }
 
     public String modeLabel() {
-        if (fileMode) return "FILE (no root)";
-        if (memMode) return "MEM (root)";
+        if (fileMode) return "FILE " + attachedPkg;
+        if (!attachedPkg.isEmpty()) return "PKG " + attachedPkg + " (chua thay wallet)";
         return "NONE";
     }
 
     public void apply(HackConfig c) {
-        if (fileMode) {
-            if (c.unlimitedCoins) setCoins(c.coinAmount);
-            if (c.unlimitedKeys) setKeys(c.keyAmount);
-        }
+        if (!fileMode) return;
+        if (c.unlimitedCoins) setCoins(c.coinAmount);
+        if (c.unlimitedKeys) setKeys(c.keyAmount);
     }
 
     public boolean setCoins(int v) { return setCurrencyJson(CURRENCY_COINS, v); }
@@ -128,27 +119,5 @@ public class MemoryBridge {
         FileOutputStream out = new FileOutputStream(f);
         out.write(s.getBytes(StandardCharsets.UTF_8));
         out.close();
-    }
-
-    private boolean hasSu() {
-        try {
-            Process p = Runtime.getRuntime().exec(new String[]{"which", "su"});
-            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            String line = r.readLine();
-            p.waitFor();
-            return line != null && line.contains("su");
-        } catch (Exception e) { return false; }
-    }
-
-    private int findPid(String pkg) {
-        try {
-            Process p = Runtime.getRuntime().exec(new String[]{"su", "-c", "pidof " + pkg});
-            BufferedReader r = new BufferedReader(new InputStreamReader(p.getInputStream()));
-            String line = r.readLine();
-            p.waitFor();
-            if (line != null && line.trim().length() > 0)
-                return Integer.parseInt(line.trim().split("\\s+")[0]);
-        } catch (Exception ignored) {}
-        return -1;
     }
 }
