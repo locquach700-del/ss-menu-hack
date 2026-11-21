@@ -1,7 +1,7 @@
 package com.ss.hack.menu;
 
 public class HackConfig {
-    public boolean menuOpen = true;
+    public String targetPackage = "com.kiloo.subwaysurf";
     public boolean unlimitedCoins = false;
     public boolean unlimitedKeys = false;
     public int coinAmount = 999999;

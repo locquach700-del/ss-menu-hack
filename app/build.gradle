@@ -1,6 +1,4 @@
-plugins {
-    id 'com.android.application'
-}
+plugins { id 'com.android.application' }
 android {
     namespace 'com.ss.hack.menu'
     compileSdk 34
@@ -8,8 +6,8 @@ android {
         applicationId "com.ss.hack.menu"
         minSdk 26
         targetSdk 34
-        versionCode 2
-        versionName "1.1-noroot"
+        versionCode 3
+        versionName "1.2-picker"
     }
     buildTypes {
         release { minifyEnabled false }
